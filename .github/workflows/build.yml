@@ -107,7 +107,19 @@ jobs:
         working-directory: build
         run: |
           ls -lh simstrat* || echo "No simstrat executable found"
-      
+
+      - name: Verify Simstrat runs (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: build
+        run: |
+          # simstrat.exe has no --version flag and exits non-zero without a config
+          # file, so just confirm it launches far enough to print its banner,
+          # instead of failing to start because a runtime DLL is missing.
+          output=$(./simstrat.exe 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "Simstrat version" || (echo "::error::simstrat.exe failed to launch" && exit 1)
+
       - name: Package executable (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
@@ -115,13 +127,29 @@ jobs:
         run: |
           chmod +x simstrat
           zip ${{ matrix.artifact_name }}.zip simstrat
-      
-      - name: Package executable (Windows)
+
+      # release-gnu links Windows statically (-static -static-libgcc
+      # -static-libgfortran), so simstrat.exe normally has no MinGW runtime DLL
+      # dependencies (verified: only core Windows system DLLs show up in ldd).
+      # Bundle any non-system DLLs anyway as a safety net in case that ever
+      # changes, then package with Compress-Archive since the "zip" CLI isn't
+      # on PATH in the Windows runner's bash.
+      - name: Assemble distributable folder (Windows)
         if: runner.os == 'Windows'
         shell: bash
         working-directory: build
         run: |
-          zip ${{ matrix.artifact_name }}.zip simstrat.exe
+          mkdir -p dist
+          cp simstrat.exe dist/
+          for dll in $(ldd simstrat.exe | awk '{print $3}' | grep -vi '^/c/windows/'); do
+            [ -f "$dll" ] && cp "$dll" dist/
+          done
+          ls -lh dist/
+
+      - name: Package executable (Windows)
+        if: runner.os == 'Windows'
+        working-directory: build
+        run: Compress-Archive -Path dist\* -DestinationPath ${{ matrix.artifact_name }}.zip
       
       - name: Upload artifact
         uses: actions/upload-artifact@v4
