@@ -40,7 +40,18 @@ jobs:
           python-version: '3.x'
       
       - name: Install FoBiS.py
-        run: pip install FoBiS.py
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # FoBiS.py >=3.6.10 builds compile commands with Windows backslash
+            # paths but parses them back with shlex.split() in POSIX mode, which
+            # treats backslash as an escape char and corrupts every path
+            # (e.g. "src\csv_kinds.f90" -> "srccsv_kinds.f90"). 3.6.8 is the last
+            # release before that regression (it used shell=True instead).
+            pip install "FoBiS.py==3.6.8"
+          else
+            pip install FoBiS.py
+          fi
 
       - name: Create FoBiS.py Windows shim
         if: runner.os == 'Windows'
