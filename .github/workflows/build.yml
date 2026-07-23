@@ -120,6 +120,18 @@ jobs:
           echo "$output"
           echo "$output" | grep -q "Simstrat version" || (echo "::error::simstrat.exe failed to launch" && exit 1)
 
+      - name: Run regression tests
+        # Non-blocking: TestCases_Results_expected_* were generated years ago
+        # against Simstrat 3.02 / AED2 1.3.5 on gfortran 7.5-8.1, and no longer
+        # match current HEAD's output (verified: thousands of mismatches on a
+        # fresh build, likely from legitimate model/toolchain changes since).
+        # Remove continue-on-error once the expected-results files are
+        # regenerated against current HEAD.
+        continue-on-error: true
+        shell: bash
+        working-directory: tests
+        run: python tests.py
+
       - name: Package executable (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
