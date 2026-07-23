@@ -70,7 +70,7 @@ jobs:
       - name: Build Simstrat
         shell: bash
         working-directory: build
-        run: FoBiS.py build -mode ${{ matrix.build_mode }}
+        run: fobis build -mode ${{ matrix.build_mode }}
       
       - name: List build output (Linux/macOS)
         if: runner.os != 'Windows'
