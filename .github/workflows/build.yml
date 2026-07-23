@@ -41,7 +41,17 @@ jobs:
       
       - name: Install FoBiS.py
         run: pip install FoBiS.py
-      
+
+      - name: Create FoBiS.py Windows shim
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # pip only creates fobis.exe on Windows, not FoBiS.py(.exe). FoBiS.py's own
+          # code spawns interdependent fobos builds via a hardcoded "FoBiS.py" subprocess
+          # call, so that exact literal filename must exist on PATH too.
+          SCRIPTS_DIR=$(python -c "import sysconfig; print(sysconfig.get_path('scripts').replace(chr(92), '/'))")
+          cp "$SCRIPTS_DIR/fobis.exe" "$SCRIPTS_DIR/FoBiS.py"
+
       - name: Install gfortran (Ubuntu)
         if: runner.os == 'Linux'
         run: |
