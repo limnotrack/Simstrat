@@ -1,0 +1,110 @@
+name: Build Simstrat
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: simstrat-linux
+            build_mode: release-gnu
+            make_cmd: make
+          - os: macos-latest
+            artifact_name: simstrat-macos
+            build_mode: release-gnu-dynamic
+            make_cmd: make
+          - os: windows-latest
+            artifact_name: simstrat-windows
+            build_mode: release-gnu
+            make_cmd: mingw32-make
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      
+      - name: Install FoBiS.py
+        run: pip install FoBiS.py
+      
+      - name: Install gfortran (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran make
+      
+      - name: Install gfortran (macOS)
+        if: runner.os == 'macOS'
+        run: brew install gcc make
+      
+      - name: Install gfortran (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install mingw --no-progress
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      
+      - name: Set F90 environment variable
+        shell: bash
+        run: echo "F90=gfortran" >> $GITHUB_ENV
+      
+      - name: Build libaed2 library
+        shell: bash
+        working-directory: lib/libaed2
+        run: ${{ matrix.make_cmd }}
+      
+      - name: Build Simstrat
+        shell: bash
+        working-directory: build
+        run: FoBiS.py build -mode ${{ matrix.build_mode }}
+      
+      - name: List build output (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        working-directory: build
+        run: |
+          ls -lh simstrat* || echo "No simstrat executable found"
+          file simstrat* || echo "Cannot determine file type"
+      
+      - name: List build output (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: build
+        run: |
+          ls -lh simstrat* || echo "No simstrat executable found"
+      
+      - name: Package executable (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        working-directory: build
+        run: |
+          chmod +x simstrat
+          zip ${{ matrix.artifact_name }}.zip simstrat
+      
+      - name: Package executable (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: build
+        run: |
+          zip ${{ matrix.artifact_name }}.zip simstrat.exe
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: build/${{ matrix.artifact_name }}.zip
+          retention-days: 90
