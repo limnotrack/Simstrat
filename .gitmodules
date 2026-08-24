@@ -4,3 +4,19 @@
 [submodule "lib/forbear"]
 	path = lib/forbear
 	url = git@github.com:d-vanzo/forbear.git
+[submodule "lib/libaed-api"]
+	path = lib/libaed-api
+	url = https://github.com/AquaticEcoDynamics/libaed-api.git
+	branch = main
+[submodule "lib/libaed-water"]
+	path = lib/libaed-water
+	url = https://github.com/limnotrack/libaed-water.git
+	branch = dev
+[submodule "lib/libaed-benthic"]
+	path = lib/libaed-benthic
+	url = https://github.com/AquaticEcoDynamics/libaed-benthic.git
+	branch = master
+[submodule "lib/libaed-demo"]
+	path = lib/libaed-demo
+	url = https://github.com/AquaticEcoDynamics/libaed-demo.git
+	branch = master

@@ -28,15 +28,15 @@ libs = ../lib/libaed2/obj/aed2_bio_utils.o
 	   ../lib/libaed2/obj/aed2_zoop_utils.o
 	   ../lib/libaed2/obj/aed2_zooplankton.o
 	   ../lib/libaed2/obj/ufz_oxygen.o
-	   ../../libaed-api/obj/aed_api.o
-	   ../../libaed-api/obj/aed_zones.o
-	   ../../libaed-api/obj/aed_ptm.o
-	   ../../libaed-api/obj/aed_external.o
-	   ../../libaed-water/lib/libaed-water.a
-	   ../../libaed-benthic/lib/libaed-benthic.a
-	   ../../libaed-demo/lib/libaed-demo.a
-	   ../../libaed-water/lib/libaed-water.a
-include = ../lib/libaed2/mod/ ../../libaed-api/mod/ ../../libaed-water/mod/
+	   ../lib/libaed-api/obj/aed_api.o
+	   ../lib/libaed-api/obj/aed_zones.o
+	   ../lib/libaed-api/obj/aed_ptm.o
+	   ../lib/libaed-api/obj/aed_external.o
+	   ../lib/libaed-water/lib/libaed-water.a
+	   ../lib/libaed-benthic/lib/libaed-benthic.a
+	   ../lib/libaed-demo/lib/libaed-demo.a
+	   ../lib/libaed-water/lib/libaed-water.a
+include = ../lib/libaed2/mod/ ../lib/libaed-api/mod/ ../lib/libaed-water/mod/
 colors=False
 quiet=False
 target=simstrat.f90
@@ -73,15 +73,15 @@ libs = ../lib/libaed2/obj/aed2_bio_utils.o
 	   ../lib/libaed2/obj/aed2_zoop_utils.o
 	   ../lib/libaed2/obj/aed2_zooplankton.o
 	   ../lib/libaed2/obj/ufz_oxygen.o
-	   ../../libaed-api/obj/aed_api.o
-	   ../../libaed-api/obj/aed_zones.o
-	   ../../libaed-api/obj/aed_ptm.o
-	   ../../libaed-api/obj/aed_external.o
-	   ../../libaed-water/lib/libaed-water.a
-	   ../../libaed-benthic/lib/libaed-benthic.a
-	   ../../libaed-demo/lib/libaed-demo.a
-	   ../../libaed-water/lib/libaed-water.a
-include = ../lib/libaed2/mod/ ../../libaed-api/mod/ ../../libaed-water/mod/
+	   ../lib/libaed-api/obj/aed_api.o
+	   ../lib/libaed-api/obj/aed_zones.o
+	   ../lib/libaed-api/obj/aed_ptm.o
+	   ../lib/libaed-api/obj/aed_external.o
+	   ../lib/libaed-water/lib/libaed-water.a
+	   ../lib/libaed-benthic/lib/libaed-benthic.a
+	   ../lib/libaed-demo/lib/libaed-demo.a
+	   ../lib/libaed-water/lib/libaed-water.a
+include = ../lib/libaed2/mod/ ../lib/libaed-api/mod/ ../lib/libaed-water/mod/
 colors=False
 quiet=False
 target=simstrat.f90
