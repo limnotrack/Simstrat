@@ -670,6 +670,11 @@ contains
 
          !Model Parameter
          call par_file%get("ModelParameters.lat", model_param%Lat, found); call check_field(found, 'ModelParameters.lat', ParName)
+         call par_file%get("ModelParameters.lon", model_param%Lon, found);
+         if (.not. found) then
+            model_param%Lon = 0.0_RK
+            call warn('Variable "ModelParameters.lon" is not set. Assume a value of 0.0 (only used by AED).')
+         end if
          call par_file%get("ModelParameters.p_air", model_param%p_air, found); call check_field(found, 'ModelParameters.p_air', ParName)
          call par_file%get("ModelParameters.a_seiche", model_param%a_seiche, found); call check_field(found, 'ModelParameters.a_seiche', ParName)
          if (model_cfg%split_a_seiche) then
