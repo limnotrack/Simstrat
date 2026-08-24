@@ -1,0 +1,68 @@
+ 'm_name','submerged', 'emergent', 'riparian'
+ 'm0',0.3,0.4,0.4
+ 'R_growth',3.3,0.4,0.3
+ 'temp_method',1,1,1
+ 'theta_growth',1.05,1.1,1.1
+ 'T_std',23,25,25
+ 'T_opt',29,31,31
+ 'T_max',37,39,39
+ 'light_model',0,0,0
+ 'I_K',200,500,500
+ 'I_S',100,100,100
+ 'KeMAC',0.0048,0.003,0.003
+ 'f_pr',0.025,0.025,0.025
+ 'R_resp',0.0375,0.05,0.05
+ 'theta_resp',1.09,1.07,1.07
+ 'sal_method',0,0,0
+ 'S_bep',1,1,1
+ 'S_maxsp',16,16,16
+ 'S_opt',1,1,1
+ 'K_CD',0,0,0
+ 'f_bg',0,0,0
+ 'k_omega',0,0,0
+ 'X_cchl',60,60,50
+ 'K_N',3.571,3.571,3.571
+ 'X_ncon',0.151,0.151,0.151
+ 'K_P',0.1613,0.1613,0.1613
+ 'X_pcon',0.0094,0.0094,0.0094
+!--- Below: fields this CSV originally omitted. Filled with the simplest
+!--- inert/off setting for each (verified by reading aed_macrophyte.F90's
+!--- actual usage), NOT calibrated values -- except X_cdw, which is an
+!--- active divisor and needed a real number, so uses the standard
+!--- literature default for plant tissue carbon fraction (~40% of dry
+!--- weight), not something calibrated to this lake.
+ 'm_initial',0.3,0.4,0.4
+ 'm_initial_minb',0,0,0
+ 'm_initial_mind',0,0,0
+ 'growth_form',1,2,2
+ 'zone_lock',0,0,0
+ 'drag_model',0,0,0
+ 'shoot_diameter',0,0,0
+ 'shoot_length',0,0,0
+ 'tissue_density',0,0,0
+ 'elastic_modulus',0,0,0
+ 'shading_model',0,0,0
+ 'kA',0,0,0
+ 'sine_blade',0,0,0
+ 'X_ldw',0,0,0
+ 'K_ldw',0,0,0
+ 'X_sdw',0,0,0
+ 'K_epi',0,0,0
+ 'E_comp',0,0,0
+ 'R_mort',0,0,0
+ 'm_initial_bg',0,0,0
+ 'tau_tran',0,0,0
+ 'R_resp_bg',0,0,0
+ 'R_mort_bg',0,0,0
+ 'X_cdw',0.4,0.4,0.4
+ 'K_S',0,0,0
+ 'K_NPP',0,0,0
+ 'fruit_model',0,0,0
+ 'm_initial_f',0,0,0
+ 'tau_tran_fruit',0,0,0
+ 'r_release',0,0,0
+ 'f_seed',0,0,0
+ 't_start_g',0,0,0
+ 't_dur_g',0,0,0
+ 't_start_r',0,0,0
+ 't_dur_r',0,0,0
