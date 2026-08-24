@@ -6,7 +6,7 @@ name: Build Simstrat (full AED-API path)
 # Those three repos are private AquaticEcoDynamics repos (not submodules --
 # see build/README.md), so this job needs a maintainer-provided token with
 # read access to them: add it as a repository secret named
-# AED_PRIVATE_REPOS_TOKEN (Settings > Secrets and variables > Actions).
+# AED_PRIVATE_PAT (Settings > Secrets and variables > Actions).
 # Without that secret configured, this workflow's job is skipped rather than
 # failing, so forks/clones without access to the private repos are unaffected.
 #
@@ -25,7 +25,7 @@ on:
 
 jobs:
   build:
-    if: ${{ secrets.AED_PRIVATE_REPOS_TOKEN != '' }}
+    if: ${{ secrets.AED_PRIVATE_PAT != '' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -53,7 +53,7 @@ jobs:
       - name: Clone private AquaticEcoDynamics repos
         shell: bash
         env:
-          TOKEN: ${{ secrets.AED_PRIVATE_REPOS_TOKEN }}
+          TOKEN: ${{ secrets.AED_PRIVATE_PAT }}
         run: |
           git clone --depth 1 "https://${TOKEN}@github.com/AquaticEcoDynamics/libaed-riparian" lib/libaed-riparian
           git clone --depth 1 "https://${TOKEN}@github.com/AquaticEcoDynamics/libaed-light" lib/libaed-lighting
