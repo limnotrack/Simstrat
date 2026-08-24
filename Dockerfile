@@ -17,6 +17,15 @@ COPY src /simstrat/src
 ENV F90=gfortran
 WORKDIR /simstrat/lib/libaed2
 RUN make
+WORKDIR /simstrat/lib/libaed-water
+RUN make
+WORKDIR /simstrat/lib/libaed-benthic
+RUN make
+WORKDIR /simstrat/lib/libaed-demo
+RUN make
+WORKDIR /simstrat/lib/libaed-api
+RUN make
+RUN make obj/aed_external.o
 WORKDIR /simstrat/build
 RUN FoBiS.py build
 COPY entrypoint.sh /entrypoint.sh

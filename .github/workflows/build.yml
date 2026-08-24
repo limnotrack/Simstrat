@@ -87,7 +87,38 @@ jobs:
         shell: bash
         working-directory: lib/libaed2
         run: ${{ matrix.make_cmd }}
-      
+
+      # The newer, opt-in libaed-api based AED coupling (see simstrat_aed.f90,
+      # ModelConfig.CoupleAED) builds alongside libaed2 above, not instead of it
+      # -- both AED backends coexist in the same binary, selected at runtime by
+      # CoupleAED2/CoupleAED (mutually exclusive). libaed-water must build first
+      # (libaed-benthic/-demo/-api all include its make_defs.inc and reference
+      # its mod/ dir); order between benthic, demo and api does not otherwise
+      # matter. aed_external.o is a separate explicit target in libaed-api's
+      # Makefile, not part of its default `all`, and build/fobos links it
+      # directly -- must be built explicitly.
+      - name: Build libaed-water library
+        shell: bash
+        working-directory: lib/libaed-water
+        run: ${{ matrix.make_cmd }}
+
+      - name: Build libaed-benthic library
+        shell: bash
+        working-directory: lib/libaed-benthic
+        run: ${{ matrix.make_cmd }}
+
+      - name: Build libaed-demo library
+        shell: bash
+        working-directory: lib/libaed-demo
+        run: ${{ matrix.make_cmd }}
+
+      - name: Build libaed-api library
+        shell: bash
+        working-directory: lib/libaed-api
+        run: |
+          ${{ matrix.make_cmd }}
+          ${{ matrix.make_cmd }} obj/aed_external.o
+
       - name: Build Simstrat
         shell: bash
         working-directory: build

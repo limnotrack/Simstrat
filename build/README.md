@@ -1,6 +1,8 @@
 # How to build Simstrat-AED2 with FoBiS.py
 In case the AED2 library is not compiled go to ´lib/libaed2´ and run:
 
+If you also want the newer, opt-in libaed-api based AED coupling (`ModelConfig.CoupleAED`), likewise compile `lib/libaed-water`, `lib/libaed-benthic`, `lib/libaed-demo` and `lib/libaed-api`, in that order (libaed-water must be built first). In `lib/libaed-api`, also run `make obj/aed_external.o` (or `mingw32-make obj/aed_external.o`) after the default build. This is optional: Simstrat builds and runs fine with only libaed2, using the original AED2 coupling.
+
 ~~~bash
 export F90=gfortran
 mingw32-make

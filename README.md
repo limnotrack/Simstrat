@@ -2,6 +2,8 @@
 
 Simstrat is a one-dimensional physical lake model for the simulation of stratification and mixing in deep stratified lakes. The model was originally developed by Goudsmit et al. (2002) and has been successfully applied to lakes with different physical properties. A k-ε model is used to model turbulent mixing including energy transfer of internal seiches. River or groundwater inflow can be added at specific depths or as density-dependent intrusions. The newest version of Simstrat can also simulate ice/snow covers and do biogeochemical simulations by using its coupling with AED2 (https://github.com/AquaticEcoDynamics/libaed2). From version 3.0 onwards, Simstrat always includes a coupling to AED2 but the coupling can be turned off using a switch in the configuration file for purely physical simulations.
 
+An additional, opt-in coupling to the newer [libaed-api](https://github.com/AquaticEcoDynamics/libaed-api) generation of AED libraries is also available (`ModelConfig.CoupleAED` / `AEDConfig` in the configuration file), alongside — not replacing — the existing AED2 coupling above. `CoupleAED2` and `CoupleAED` are mutually exclusive; a configuration may enable at most one of them. Building it requires the additional `lib/libaed-water`, `lib/libaed-benthic`, `lib/libaed-demo` and `lib/libaed-api` submodules (see [build/README.md](build)).
+
 ## Run Simstrat
 
 There are a number of options for running Simstrat: 

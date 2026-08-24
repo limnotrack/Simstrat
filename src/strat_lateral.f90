@@ -55,7 +55,7 @@ module strat_lateral
       integer, dimension(:), allocatable :: number_of_lines_read
       logical, dimension(:), allocatable :: has_surface_input, has_deep_input
       integer :: n_vars, max_n_inflows
-      logical :: couple_aed2
+      logical :: couple_aed2 ! True if EITHER AED backend (AED2 or the newer libaed-api coupling) is active; inflow handling here is backend-agnostic
       character(len=100) :: simstrat_path(n_simstrat), aed2_path
 
    contains
@@ -83,7 +83,7 @@ contains
       class(ModelState) :: state
    end subroutine
 
-   subroutine lateral_generic_init(self, state, model_config, input_config, aed2_config, model_param, grid)
+   subroutine lateral_generic_init(self, state, model_config, input_config, aed2_config, aed_config, model_param, grid)
       implicit none
       class(GenericLateralModule) :: self
       class(ModelState) :: state
@@ -91,6 +91,7 @@ contains
       class(ModelConfig), target :: model_config
       class(InputConfig), target :: input_config
       class(AED2Config), target :: aed2_config
+      class(AEDConfig), target :: aed_config
       class(ModelParam), target :: model_param
 
       ! Locals
@@ -106,10 +107,15 @@ contains
       self%simstrat_path(3) = input_config%TinpName
       self%simstrat_path(4) = input_config%SinpName
 
-      self%couple_aed2 = model_config%couple_aed2
-      if (self%couple_aed2) then
+      ! Only one of couple_aed2/couple_aed can be true (enforced at config parse time);
+      ! whichever is active supplies the AED variable count and inflow file path.
+      self%couple_aed2 = model_config%couple_aed2 .or. model_config%couple_aed
+      if (model_config%couple_aed2) then
          self%n_vars = self%n_vars + state%n_AED2_state
          self%aed2_path = aed2_config%path_aed2_inflow
+      else if (model_config%couple_aed) then
+         self%n_vars = self%n_vars + state%n_AED2_state
+         self%aed2_path = aed_config%path_aed_inflow
       end if
 
       self%max_n_inflows = model_config%max_length_input_data

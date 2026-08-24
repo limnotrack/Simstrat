@@ -45,6 +45,7 @@ program simstrat_main
    use strat_transport
    use strat_absorption
    use strat_advection
+   use simstrat_aed2
    use simstrat_aed
    use strat_lateral
    use forbear
@@ -72,7 +73,8 @@ program simstrat_main
    type(IceModule) :: mod_ice
    type(AbsorptionModule) :: mod_absorption
    type(AdvectionModule) :: mod_advection
-   type(SimstratAED) :: mod_aed2
+   type(SimstratAED2) :: mod_aed2 ! AED2 coupling (couple_aed2)
+   type(SimstratAED) :: mod_aed   ! newer libaed-api based coupling (couple_aed), mutually exclusive with mod_aed2
    type(LateralModule), target :: mod_lateral_normal
    type(LateralRhoModule), target :: mod_lateral_rho
    class(GenericLateralModule), pointer :: mod_lateral
@@ -91,7 +93,7 @@ program simstrat_main
 
    ! Print some information
    write (6, *) 'Simstrat version '//version
-   write (6, *) 'Coupled with the biogeochemical library AED (via libaed-api)'
+   write (6, *) 'Coupled with the biogeochemical library AED2, and optionally AED (via libaed-api)'
    write (6, *) 'This software has been developed at Eawag - Swiss Federal Institute of Aquatic Science and Technology'
    write (6, *) ''
 
@@ -126,9 +128,14 @@ program simstrat_main
                             simdata%input_cfg%AbsorpName, &
                             simdata%grid)
 
-   ! Initialize biochemical model "AED" if used
+   ! Initialize biochemical model if used. couple_aed2 and couple_aed are
+   ! mutually exclusive (enforced when the config is read), so at most one
+   ! of these actually runs.
    if (simdata%model_cfg%couple_aed2) then
-      call mod_aed2%init(simdata%model, simdata%grid, simdata%model_cfg, simdata%aed2_cfg, simdata%model_param)
+      call mod_aed2%init(simdata%model, simdata%grid, simdata%model_cfg, simdata%aed2_cfg)
+   end if
+   if (simdata%model_cfg%couple_aed) then
+      call mod_aed%init(simdata%model, simdata%grid, simdata%model_cfg, simdata%aed_cfg, simdata%model_param)
    end if
 
    ! If there is advection (due to inflow)
@@ -145,7 +152,7 @@ program simstrat_main
          ! User defined inflow depths
          mod_lateral => mod_lateral_rho
       end if
-      call mod_lateral%init(simdata%model, simdata%model_cfg, simdata%input_cfg, simdata%aed2_cfg, simdata%model_param, simdata%grid)
+      call mod_lateral%init(simdata%model, simdata%model_cfg, simdata%input_cfg, simdata%aed2_cfg, simdata%aed_cfg, simdata%model_param, simdata%grid)
    else
       call warn('Lake in-/outflow is turned off')
    end if
@@ -163,7 +170,7 @@ program simstrat_main
    end if
 
    ! Setup logger
-   call logger%initialize(simdata%model, simdata%sim_cfg, simdata%model_cfg, simdata%aed2_cfg, simdata%output_cfg, simdata%grid, continue_from_snapshot)
+   call logger%initialize(simdata%model, simdata%sim_cfg, simdata%model_cfg, simdata%aed2_cfg, simdata%aed_cfg, simdata%output_cfg, simdata%grid, continue_from_snapshot)
 
    ! Calculate simulation_end_time, which is a tuple of integers (days, seconds)
 
@@ -221,7 +228,7 @@ contains
       call ok("Start day: "//real_to_str(simdata%sim_cfg%start_datum, '(F7.1)'))
       new_start_datum = simdata%sim_cfg%start_datum
       if (continue_from_snapshot) then
-         call load_snapshot(snapshot_file_path, simdata%model_cfg%couple_aed2)
+         call load_snapshot(snapshot_file_path, (simdata%model_cfg%couple_aed2 .or. simdata%model_cfg%couple_aed))
          call ok("Simulation snapshot successfully read. Snapshot day: "//real_to_str(simdata%model%datum, '(F7.1)'))
          call logger%calculate_simulation_time_for_next_output(simdata%model%simulation_time)
          new_start_datum = simdata%model%datum
@@ -274,11 +281,11 @@ contains
          ! Update forcing
          call mod_forcing%update(simdata%model)
 
-         ! Update absorption (except if AED2 is off or if AED2 is on but bioshade feedback is off)
-         if (simdata%model_cfg%couple_aed2) then
-            if (.not. simdata%aed2_cfg%bioshade_feedback) then
-               call mod_absorption%update(simdata%model)
-            end if
+         ! Update absorption, unless an active AED backend's bioshade feedback is
+         ! providing the absorption profile this step instead.
+         if ((simdata%model_cfg%couple_aed2 .and. simdata%aed2_cfg%bioshade_feedback) .or. &
+             (simdata%model_cfg%couple_aed .and. simdata%aed_cfg%bioshade_feedback)) then
+            ! AED bioshade feedback active; absorption comes from the AED coupler instead
          else
             call mod_absorption%update(simdata%model)
          end if
@@ -328,6 +335,9 @@ contains
          if (simdata%model_cfg%couple_aed2) then
             call mod_aed2%update(simdata%model)
          end if
+         if (simdata%model_cfg%couple_aed) then
+            call mod_aed%update(simdata%model)
+         end if
 
          ! Call logger to write files
          call logger%log(simdata)
@@ -341,9 +351,9 @@ contains
          end if
 
       end do
-      if (simdata%sim_cfg%continue_from_snapshot) call save_snapshot(snapshot_file_path, simdata%model_cfg%couple_aed2)
+      if (simdata%sim_cfg%continue_from_snapshot) call save_snapshot(snapshot_file_path, (simdata%model_cfg%couple_aed2 .or. simdata%model_cfg%couple_aed))
       if (simdata%sim_cfg%save_text_restart) then
-         if (simdata%model_cfg%couple_aed2) call warn('Text restart is not working for AED2 variables.')
+         if ((simdata%model_cfg%couple_aed2 .or. simdata%model_cfg%couple_aed)) call warn('Text restart is not working for AED variables.')
          call save_restart(file_text_restart, file_text_restart2)
       end if
    end subroutine

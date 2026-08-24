@@ -66,7 +66,7 @@ contains
       self%param => model_param
       self%grid => grid
 
-      if (self%cfg%couple_aed2) then
+      if ((self%cfg%couple_aed2 .or. self%cfg%couple_aed)) then
          do i = 1, state%n_AED2_state
             select case(trim(state%AED2_state_names(i)))
             case('CAR_pH')
@@ -135,7 +135,7 @@ contains
             call do_update_statvars(self, state, AreaFactor_adv(1:nz_occupied), dh_i(t_i))
 
             ! Update AED2 variables
-            if(self%cfg%couple_aed2) call do_update_statvars_AED2(self, state, AreaFactor_adv(1:nz_occupied), dh_i(t_i))
+            if((self%cfg%couple_aed2 .or. self%cfg%couple_aed)) call do_update_statvars_AED2(self, state, AreaFactor_adv(1:nz_occupied), dh_i(t_i))
 
             ! Adjust boxes (Horrible if/else construction - replace!)
             if (t_i == 1) then
@@ -306,7 +306,7 @@ contains
          AED2_state(ubnd_vol,:) = AED2_state(ubnd_vol,:)*h(ubnd_vol)/(h(ubnd_vol) + dh)
 
          ! Transform [H] back to pH
-         if(self%cfg%couple_aed2 .and. state%n_pH > 0) then
+         if((self%cfg%couple_aed2 .or. self%cfg%couple_aed) .and. state%n_pH > 0) then
             AED2_state(:,state%n_pH) = -log10(AED2_state(:,state%n_pH))
          end if
 
@@ -343,7 +343,7 @@ contains
          state%Q_vert(ubnd_fce) = (w_a*state%Q_vert(ubnd_fce + 1) + w_b*state%Q_vert(ubnd_fce))/(w_a + w_b)
 
          ! AED2
-         if (self%cfg%couple_AED2) AED2_state(ubnd_vol,:) = (w_a*AED2_state(ubnd_vol + 1,:) + w_b*AED2_state(ubnd_vol,:))/(w_a + w_b)
+         if ((self%cfg%couple_aed2 .or. self%cfg%couple_aed)) AED2_state(ubnd_vol,:) = (w_a*AED2_state(ubnd_vol + 1,:) + w_b*AED2_state(ubnd_vol,:))/(w_a + w_b)
 
          ! update area factors
          call self%grid%update_area_factors()
@@ -374,7 +374,7 @@ contains
          state%k(ubnd_fce) = state%k(ubnd_fce - 1)
          state%eps(ubnd_fce) = state%eps(ubnd_fce - 1)
 
-         if (self%cfg%couple_AED2) state%AED2_state(ubnd_vol,:) = state%AED2_state(ubnd_vol - 1,:)
+         if ((self%cfg%couple_aed2 .or. self%cfg%couple_aed)) state%AED2_state(ubnd_vol,:) = state%AED2_state(ubnd_vol - 1,:)
 
          call self%grid%update_area_factors()
 

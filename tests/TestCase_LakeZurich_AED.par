@@ -20,7 +20,8 @@
   },
   "ModelConfig" : {
     "MaxLengthInputData"      : 1000,
-    "CoupleAED2"              : true,
+    "CoupleAED2"              : false,
+    "CoupleAED"               : true,
     "TurbulenceModel"         : 1,
     "SplitSeicheParameter"    : false,
     "StabilityFunction"       : 2,
@@ -35,10 +36,10 @@
     "IceModel"                : 1,
     "SnowModel"               : 1
   },
-  "AED2Config" : {
-    "AED2ConfigFile"          : "TestCase_LakeZurich/aed.nml",
-    "PathAED2initial"         : "TestCase_LakeZurich/AED2_initcond/",
-    "PathAED2inflow"          : "TestCase_LakeZurich/AED2_inflow/",
+  "AEDConfig" : {
+    "AEDConfigFile"           : "TestCase_LakeZurich/aed.nml",
+    "PathAEDinitial"          : "TestCase_LakeZurich/AED_initcond/",
+    "PathAEDinflow"           : "TestCase_LakeZurich/AED_inflow/",
     "ParticleMobility"        : 1,
     "BioshadeFeedback"        : 0,
     "BackgroundExtinction"    : 0.2,
