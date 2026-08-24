@@ -1,0 +1,5 @@
+depth [m], conc. [mmol/m3 * m2/s] (zero inflow placeholder)
+1 1
+-1 0
+0 0 0
+60000 0 0
