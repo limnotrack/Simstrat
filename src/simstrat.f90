@@ -45,7 +45,7 @@ program simstrat_main
    use strat_transport
    use strat_absorption
    use strat_advection
-   use simstrat_aed2
+   use simstrat_aed
    use strat_lateral
    use forbear
    use csv_module
@@ -72,7 +72,7 @@ program simstrat_main
    type(IceModule) :: mod_ice
    type(AbsorptionModule) :: mod_absorption
    type(AdvectionModule) :: mod_advection
-   type(SimstratAED2) :: mod_aed2
+   type(SimstratAED) :: mod_aed2
    type(LateralModule), target :: mod_lateral_normal
    type(LateralRhoModule), target :: mod_lateral_rho
    class(GenericLateralModule), pointer :: mod_lateral
@@ -91,7 +91,7 @@ program simstrat_main
 
    ! Print some information
    write (6, *) 'Simstrat version '//version
-   write (6, *) 'Coupled with the biogeochemical library AED2'
+   write (6, *) 'Coupled with the biogeochemical library AED (via libaed-api)'
    write (6, *) 'This software has been developed at Eawag - Swiss Federal Institute of Aquatic Science and Technology'
    write (6, *) ''
 
@@ -126,9 +126,9 @@ program simstrat_main
                             simdata%input_cfg%AbsorpName, &
                             simdata%grid)
 
-   ! Initialize biochemical model "AED2" if used
+   ! Initialize biochemical model "AED" if used
    if (simdata%model_cfg%couple_aed2) then
-      call mod_aed2%init(simdata%model, simdata%grid, simdata%model_cfg, simdata%aed2_cfg)
+      call mod_aed2%init(simdata%model, simdata%grid, simdata%model_cfg, simdata%aed2_cfg, simdata%model_param)
    end if
 
    ! If there is advection (due to inflow)
