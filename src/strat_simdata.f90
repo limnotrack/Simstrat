@@ -244,6 +244,7 @@ module strat_simdata
       real(RK) :: SST, heat, heat_snow, heat_ice, heat_snowice! Sea surface temperature and heat flux
 
       real(RK) :: T_atm ! Air temp at surface
+      real(RK) :: humidity = 70.0_RK ! Relative humidity at surface [%]; default unless forcing mode 6 provides it
       real(RK), dimension(:), allocatable :: rad, rad_vol ! Solar radiation (in water)
       real(RK), dimension(:), allocatable :: Q_vert ! Vertical exchange between boxes
       real(RK), dimension(9,12) :: albedo_data  ! Experimental monthly albedo data for determination of current water albedo

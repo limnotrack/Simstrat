@@ -76,7 +76,7 @@ module simstrat_aed
 
       ! Environment targets handed to the API as pointers. Scalar values that
       ! are not pointer components of ModelState are copied here every step.
-      real(RK), pointer :: dt_c, yearday_c, air_temp_c, air_pres_c, longwave_c
+      real(RK), pointer :: dt_c, yearday_c, air_temp_c, air_pres_c, longwave_c, humidity_c
       real(RK), pointer :: blueice_c, whiteice_c, colarea_c, sedzone_c, kw_c, lat_c, lon_c
       integer, pointer :: bot_i
       logical, pointer :: active_c
@@ -216,6 +216,7 @@ contains
          env(1)%longwave => self%longwave_c
          env(1)%air_temp => self%air_temp_c
          env(1)%air_pres => self%air_pres_c
+         env(1)%humidity => self%humidity_c
          env(1)%wind => state%uv10
          env(1)%rain => state%rain
          env(1)%I_0 => state%rad0
@@ -369,6 +370,7 @@ contains
          self%dt_c = state%dt
          self%yearday_c = day_of_year(state%current_year, state%current_month, state%current_day)
          self%air_temp_c = state%T_atm
+         self%humidity_c = state%humidity
          self%longwave_c = state%ha
          self%blueice_c = state%black_ice_h
          self%whiteice_c = state%white_ice_h
@@ -500,8 +502,13 @@ contains
          ! Scalar environment targets
          allocate (self%dt_c, self%yearday_c, self%air_temp_c, self%air_pres_c, &
                    self%longwave_c, self%blueice_c, self%whiteice_c, self%colarea_c, &
-                   self%sedzone_c, self%kw_c, self%lat_c, self%lon_c, self%bot_i, self%active_c)
+                   self%sedzone_c, self%kw_c, self%lat_c, self%lon_c, self%bot_i, self%active_c, &
+                   self%humidity_c)
          self%dt_c = 0.0_RK; self%yearday_c = 0.0_RK; self%air_temp_c = 0.0_RK
+         ! Seed value before the first forcing_update call; overwritten from
+         ! state%humidity every step (real data under forcing mode 6, a
+         ! constant default otherwise -- see ModelState%humidity).
+         self%humidity_c = 70.0_RK
          self%air_pres_c = 0.0_RK; self%longwave_c = 0.0_RK
          self%blueice_c = 0.0_RK; self%whiteice_c = 0.0_RK; self%colarea_c = 0.0_RK
          self%sedzone_c = 0.0_RK; self%kw_c = 0.0_RK; self%lat_c = 0.0_RK; self%lon_c = 0.0_RK
@@ -633,6 +640,7 @@ contains
          aedZones(zon)%z_env%z_wind = state%uv10
          aedZones(zon)%z_env%z_air_temp = self%air_temp_c
          aedZones(zon)%z_env%z_air_pres = self%air_pres_c
+         aedZones(zon)%z_env%z_humidity = self%humidity_c
          aedZones(zon)%z_env%z_rain = state%rain
          aedZones(zon)%z_env%z_I_0 = state%rad0
          aedZones(zon)%z_env%z_longwave = self%longwave_c

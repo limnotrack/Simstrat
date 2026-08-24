@@ -147,7 +147,7 @@ contains
       ! Local iables
       integer :: nval_offset
       real(RK) :: tau
-      real(RK) :: A_s(8), A_e(8), A_cur(8) ! 8 is the maximum number of rows in the forcing file
+      real(RK) :: A_s(9), A_e(9), A_cur(9) ! 9 is the maximum number of rows in the forcing file (mode 6 with filtered wind and precipitation)
       real(RK) :: fu, Vap_wat, heat0, emissivity
       real(RK) :: T_surf, F_glob, Vap_atm, Cloud
       real(RK) :: H_A, H_K, H_V, H_W, H_tot, emiss_A
@@ -290,8 +290,36 @@ contains
             else if (cfg%snow_model == 1) then
                state%precip = max(A_cur(7),0.0_RK)
             end if
+
+         ! Forcing 6 (date, U10, V10, T_atm, H_sol, Vap, ILWR, Humidity)
+         else if (cfg%forcing_mode == 6) then
+            call self%read (state%datum, A_s, A_e, A_cur, 7 + nval_offset, state%first_timestep)
+            state%u10 = A_cur(1)*param%f_wind !MS 2014: added f_wind
+            state%v10 = A_cur(2)*param%f_wind !MS 2014: added f_wind
+            state%T_atm = A_cur(3)
+            A_cur(4) = max(A_cur(4),0.0_RK)  ! To avoid negative values because of numerical problems
+
+            if (state%black_ice_h > 0 .and. state%white_ice_h == 0 .and. state%snow_h == 0) then ! Ice
+               F_glob = A_cur(4)*(1 - ice_albedo) * param%p_sw_ice
+            else if (state%white_ice_h > 0 .and. state%snow_h == 0) then ! Snowice
+               F_glob = A_cur(4)*(1 - snowice_albedo) * param%p_sw_ice
+            else if (state%snow_h > 0) then ! Snow
+               F_glob = A_cur(4)*(1 - snow_albedo) * param%p_sw_ice
+            else ! Water
+               F_glob = A_cur(4)*(1 - state%albedo_water) * param%p_sw_water
+            end if
+
+            Vap_atm = A_cur(5)
+            H_A = (1 - r_a)*A_cur(6) ! FB 2023: add reflection of longwave radiation
+            state%humidity = A_cur(7)
+            if (cfg%use_filtered_wind) state%Wf = A_cur(8) ! AG 2014
+            if (cfg%snow_model == 1 .and. cfg%use_filtered_wind) then
+               state%precip = max(A_cur(9),0.0_RK)
+            else if (cfg%snow_model == 1) then
+               state%precip = max(A_cur(8),0.0_RK)
+            end if
          else
-            call error('Wrong forcing type (must be 1, 2, 3, 4 or 5).')
+            call error('Wrong forcing type (must be 1, 2, 3, 4, 5 or 6).')
          end if
          state%uv10 = sqrt(state%u10**2 + state%v10**2) ! AG 2014
 
@@ -311,7 +339,7 @@ contains
                ! Long-wave radiation according to Dilley and O'Brien (1998) with cloud correction of Crawford and Duchon (1999)
                ! See Flerchinger et al. (2009) for an evaluation of different long-wave radiation algorithms
                ! 465 instead of 4650 because Vap_atm is in [hPa]
-               if (cfg%forcing_mode /= 5) then
+               if (cfg%forcing_mode /= 5 .and. cfg%forcing_mode /= 6) then
                   H_A = 59.38_RK + 113.7_RK*((state%T_atm + 273.15_RK)/273.16_RK)**6 + 96.96_RK*sqrt(465*Vap_atm/(state%T_atm + 273.15_RK)*0.04_RK)
                   emiss_A = (1 - Cloud)*H_A/sig/(state%T_atm + 273.15_RK)**4 + Cloud
                   H_A = (1 - r_a)*emiss_A*sig*(state%T_atm + 273.15_RK)**4
@@ -354,7 +382,7 @@ contains
                      emissivity = 5.0e-4_RK * state%snow_dens + 6.75e-1_RK
                   end if
                   ! obs fitting factors param%p_lw and param%p_windf not applied to ice covered lake
-                  if (cfg%forcing_mode /= 5) then
+                  if (cfg%forcing_mode /= 5 .and. cfg%forcing_mode /= 6) then
                      H_A = (Ha_a + Ha_b * (Vap_atm**(1.0_RK/2.0_RK))) * (1 + Ha_c * Cloud**2) * sig * (state%T_atm + 273.15_RK)**4
                   end if
                   H_W = -emissivity * sig * (T_surf + 273.15_RK)**4
