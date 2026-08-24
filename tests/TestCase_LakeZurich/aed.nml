@@ -7,16 +7,16 @@
 !    yet supported by the Simstrat coupler). The zone-1 sediment fluxes from
 !    the original &aed_sed_const2d are used as constants in each module
 !    instead, and the SDF_* link variables are cleared.
-!  - removed 'aed_oasim' (libaed-lighting) and 'aed_alum' (libaed-dev): these
-!    libraries are not linked into the Simstrat build.
 !  - removed unused groups (mixoplankton, zooplankton, macrophyte).
 !  - phytoplankton dbase points to a local copy of aed_phyto_pars.csv; the
 !    path is relative to the directory Simstrat is run from (tests/).
+!  - 'aed_alum' (libaed-dev) added at the end with defaults, as a smoke test
+!    of the full libaed-dev/-riparian/-lighting/phreeqcrm build path.
 !
 ! Note: namelist groups below must appear in the same order as in `models`.
 !-------------------------------------------------------------------------------
 &aed_models
-   models = 'aed_oxygen','aed_silica','aed_nitrogen','aed_phosphorus','aed_organic_matter','aed_phytoplankton','aed_totals'
+   models = 'aed_oxygen','aed_silica','aed_nitrogen','aed_phosphorus','aed_organic_matter','aed_phytoplankton','aed_totals','aed_alum'
 /
 &aed_oxygen
    oxy_initial = 312.5
@@ -178,4 +178,11 @@
    TP_varscale = 1, 1, 1, 1, 1, 1
    TOC_vars = 'OGM_doc','OGM_poc','PHY_cyano','PHY_green','PHY_diatom'
    TOC_varscale = 1, 1, 1, 1, 1
+/
+&aed_alum
+   ala_initial = 0.0
+   alp_initial = 0.0
+   ben_ala_initial = 0.0
+   ben_alp_initial = 0.0
+   frp_variable = 'PHS_frp'
 /
