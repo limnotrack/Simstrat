@@ -524,6 +524,7 @@ contains
                  output_cfg=>self%simdata%output_cfg, &
                  model_cfg=>self%simdata%model_cfg, &
                  aed2_cfg=>self%simdata%aed2_cfg, &
+                 aed_cfg=>self%simdata%aed_cfg, &
                  sim_cfg=>self%simdata%sim_cfg, &
                  model_param=>self%simdata%model_param)
 
@@ -640,6 +641,14 @@ contains
             model_cfg%couple_aed2 = .false.
             call warn('Variable "ModelConfig.CoupleAED2" is not set. Assume you do not want to couple simstrat with aed2.')
          end if
+         call par_file%get("ModelConfig.CoupleAED", model_cfg%couple_aed,found);
+         if (.not. found) then
+            model_cfg%couple_aed = .false.
+            call warn('Variable "ModelConfig.CoupleAED" is not set. Assume you do not want to couple simstrat with the AED-API based coupling.')
+         end if
+         if (model_cfg%couple_aed2 .and. model_cfg%couple_aed) then
+            call error('ModelConfig.CoupleAED2 and ModelConfig.CoupleAED cannot both be true. They select two mutually exclusive AED coupling implementations (the AED2 library and the newer libaed-api based coupling); pick one.')
+         end if
          call par_file%get("ModelConfig.TurbulenceModel", model_cfg%turbulence_model, found); call check_field(found, 'ModelConfig.TurbulenceModel', ParName)
          call par_file%get("ModelConfig.SplitSeicheParameter", model_cfg%split_a_seiche, found); call check_field(found, 'ModelConfig.SplitSeicheParameter', ParName)
          call par_file%get("ModelConfig.StabilityFunction", model_cfg%stability_func, found); call check_field(found, 'ModelConfig.StabilityFunction', ParName)
@@ -666,6 +675,27 @@ contains
             !call par_file%get("AED2Config.NZones", aed2_cfg%n_zones,found); call check_field(found, 'AED2Config.NZones', ParName)
             !call par_file%get("AED2Config.ZoneHeights", aed2_cfg%zone_heights,found); call check_field(found, 'AED2Config.ZoneHeights', ParName)
             call par_file%get("AED2Config.OutputDiagnosticVars", aed2_cfg%output_diagnostic_variables,found); call check_field(found, 'AED2Config.OutputDiagnosticVars', ParName)
+         end if
+
+         ! AED (libaed-api) configuration -- new, opt-in alternative to the AED2 coupling above
+         if (model_cfg%couple_aed) then
+            call par_file%get("AEDConfig.AEDConfigFile", aed_cfg%aed_config_file,found); call check_field(found, 'AEDConfig.AEDConfigFile', ParName)
+            call par_file%get("AEDConfig.PathAEDinitial", aed_cfg%path_aed_initial,found); call check_field(found, 'AEDConfig.PathAEDinitial', ParName)
+            call par_file%get("AEDConfig.PathAEDinflow", aed_cfg%path_aed_inflow,found); call check_field(found, 'AEDConfig.PathAEDinflow',ParName)
+            call par_file%get("AEDConfig.ParticleMobility", aed_cfg%particle_mobility,found); call check_field(found, 'AEDConfig.ParticleMobility', ParName)
+            call par_file%get("AEDConfig.BioshadeFeedback", aed_cfg%bioshade_feedback,found); call check_field(found, 'AEDConfig.BioshadeFeedback', ParName)
+            call par_file%get("AEDConfig.BackgroundExtinction", aed_cfg%background_extinction,found); call check_field(found, 'AEDConfig.BackgroundExtinction', ParName)
+            call par_file%get("AEDConfig.BenthicMode", aed_cfg%benthic_mode,found); call check_field(found, 'AEDConfig.BenthicMode', ParName)
+            call par_file%get("AEDConfig.OutputDiagnosticVars", aed_cfg%output_diagnostic_variables,found); call check_field(found, 'AEDConfig.OutputDiagnosticVars', ParName)
+
+            ! Sediment zones (GLM-style depth bands), only required if BenthicMode > 1
+            if (aed_cfg%benthic_mode > 1) then
+               call par_file%get("AEDConfig.NZones", aed_cfg%n_zones, found); call check_field(found, 'AEDConfig.NZones', ParName)
+               call par_file%get("AEDConfig.ZoneHeights", aed_cfg%zone_heights, found); call check_field(found, 'AEDConfig.ZoneHeights', ParName)
+               if (size(aed_cfg%zone_heights) /= aed_cfg%n_zones) then
+                  call error('AEDConfig.ZoneHeights must have exactly AEDConfig.NZones entries.')
+               end if
+            end if
          end if
 
          !Model Parameter

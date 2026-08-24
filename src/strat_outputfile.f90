@@ -43,10 +43,19 @@ module strat_outputfile
       class(SimConfig), public, pointer :: sim_config
       class(ModelConfig), public, pointer :: model_config
       class(AED2Config), public, pointer :: aed2_config
+      class(AEDConfig), public, pointer :: aed_config
       class(StaggeredGrid), public, pointer ::grid
       type(csv_file), dimension(:), allocatable :: output_files
       integer, public :: n_depths
       integer, public :: n_vars, n_vars_Simstrat, n_vars_AED2_state, n_vars_AED2_diagnostic, n_vars_AED2_diagnostic_sheet
+      ! Dedicated per-zone output (<name>_zone_out.dat), additive to the
+      ! above -- see simstrat_aed.f90's sediment zones for the source data.
+      integer, public :: n_zones = 0
+      integer, public :: n_vars_AED_zone_state = 0, n_vars_AED_zone_diagnostic_sheet = 0
+      real(RK), dimension(:), pointer :: zone_heights => null()
+      character(len=48), dimension(:), pointer :: zone_state_names => null()
+      real(RK), dimension(:,:), pointer :: zone_state_values => null()
+      real(RK), dimension(:,:), pointer :: zone_diagnostic_sheet_values => null()
       integer, public :: counter = 0
       integer(8), public, dimension(2) :: simulation_time_for_next_output = 0
       real(RK), dimension(:,:), allocatable :: last_iteration_data
@@ -93,7 +102,7 @@ contains
 
    ! Abstract interface definitions
 
-   subroutine generic_log_init(self, state, sim_config, model_config, aed2_config, output_config, grid, snapshot_file_exists)
+   subroutine generic_log_init(self, state, sim_config, model_config, aed2_config, aed_config, output_config, grid, snapshot_file_exists)
 
       implicit none
 
@@ -102,6 +111,7 @@ contains
       class(SimConfig), target :: sim_config
       class(ModelConfig), target :: model_config
       class(AED2Config), target :: aed2_config
+      class(AEDConfig), target :: aed_config
       class(OutputConfig), target :: output_config
       class(StaggeredGrid), target :: grid
       logical, intent(in) :: snapshot_file_exists
@@ -153,7 +163,7 @@ contains
 
    ! Init logging for interpolating logger
 
-   subroutine log_init_interpolating(self, state, sim_config, model_config, aed2_config, output_config, grid, snapshot_file_exists)
+   subroutine log_init_interpolating(self, state, sim_config, model_config, aed2_config, aed_config, output_config, grid, snapshot_file_exists)
 
       implicit none
       class(InterpolatingLogger), intent(inout) :: self
@@ -161,20 +171,30 @@ contains
       class(SimConfig), target :: sim_config
       class(ModelConfig), target :: model_config
       class(AED2Config), target :: aed2_config
+      class(AEDConfig), target :: aed_config
       class(OutputConfig), target :: output_config
       class(StaggeredGrid), target :: grid
       logical, intent(in) :: snapshot_file_exists
 
       integer :: i, j, n_output_times
+      logical :: output_diagnostic_variables
 
       self%sim_config => sim_config
       self%model_config => model_config
       self%aed2_config => aed2_config
+      self%aed_config => aed_config
       self%output_config => output_config
       self%grid => grid
       self%n_vars_Simstrat = size(output_config%output_vars)
 
-      if (self%model_config%couple_aed2) then
+      ! Either AED backend (AED2 or the newer libaed-api coupling) populates the
+      ! same generic AED_state/AED_diagnostic arrays in ModelState; only the
+      ! per-backend OutputDiagnosticVars flag needs picking based on which is active.
+      if (model_config%couple_aed2 .or. model_config%couple_aed) then
+        output_diagnostic_variables = .false.
+        if (model_config%couple_aed2) output_diagnostic_variables = aed2_config%output_diagnostic_variables
+        if (model_config%couple_aed) output_diagnostic_variables = aed_config%output_diagnostic_variables
+
         ! allocate AED2 output structure for state variables
         allocate (output_config%output_vars_aed2_state) ! We don't know yet how many variables
         output_config%output_vars_aed2_state%names => state%AED2_state_names
@@ -182,7 +202,7 @@ contains
         self%n_vars_AED2_state = state%n_AED2_state
 
         ! Allocate AED2 output structure for diagnostic variables if necessary
-        if (aed2_config%output_diagnostic_variables) then
+        if (output_diagnostic_variables) then
           allocate (output_config%output_vars_aed2_diagnostic) ! We don't know yet how many variables
           output_config%output_vars_aed2_diagnostic%names => state%AED2_diagnostic_names
           output_config%output_vars_aed2_diagnostic%values => state%AED2_diagnostic
@@ -200,7 +220,23 @@ contains
       else
          self%n_vars_AED2_state = 0
       end if
-      self%n_vars = self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet
+      ! Dedicated per-zone output files, additive to the aggregate AED2/AED
+      ! files above. Diagnostic-sheet zone output additionally requires
+      ! OutputDiagnosticVars (matches the aggregate diagnostic-sheet gating).
+      if (state%n_AED_zones > 0) then
+         self%n_zones = state%n_AED_zones
+         self%zone_heights => state%AED_zone_heights
+         self%zone_state_names => state%AED_zone_state_names
+         self%zone_state_values => state%AED_zone_state
+         self%n_vars_AED_zone_state = size(state%AED_zone_state, 2)
+         if (output_diagnostic_variables) then
+            self%zone_diagnostic_sheet_values => state%AED_zone_diagnostic_sheet
+            self%n_vars_AED_zone_diagnostic_sheet = size(state%AED_zone_diagnostic_sheet, 2)
+         end if
+      end if
+
+      self%n_vars = self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet &
+                    + self%n_vars_AED_zone_state + self%n_vars_AED_zone_diagnostic_sheet
 
       ! If output times are given in file
       if (output_config%thinning_interval == 0) then
@@ -266,7 +302,9 @@ contains
       character(len=256) :: mkdirCmd
 
       self%n_depths = size(output_config%zout)
-      allocate (self%last_iteration_data(self%n_vars, self%n_depths))
+      ! Zone-output variables use n_zones columns rather than n_depths, so
+      ! this must be wide enough for whichever is larger.
+      allocate (self%last_iteration_data(self%n_vars, max(self%n_depths, self%n_zones)))
       self%last_iteration_data = 0
 
       ! Check if output directory exists
@@ -296,7 +334,7 @@ contains
       class(OutputConfig), target :: output_config
       class(StaggeredGrid), target :: grid
       logical, intent(in) :: snapshot_file_exists
-      integer :: i, exitstat
+      integer :: i, j, exitstat
       character(len=:), allocatable :: file_path
       logical :: status_ok, append, exist_output_folder
       character(len=256) :: mkdirCmd
@@ -347,9 +385,10 @@ contains
          end if
       end do
 
-      ! AED2 part
-      if (self%model_config%couple_aed2) then
-         do i = self%n_vars_Simstrat + 1, self%n_vars
+      ! AED2 part (aggregate state/diagnostic/diagnostic-sheet; excludes the
+      ! dedicated per-zone files, opened separately below)
+      if ((self%model_config%couple_aed2 .or. self%model_config%couple_aed)) then
+         do i = self%n_vars_Simstrat + 1, self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet
             if (i < (self%n_vars_Simstrat + self%n_vars_AED2_state + 1)) then
                file_path = output_config%PathOut//'/'//trim(self%output_config%output_vars_aed2_state%names(i - self%n_vars_Simstrat))//'_out.dat'
             else if (i < (self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + 1)) then
@@ -375,6 +414,30 @@ contains
                   call self%output_files(i)%add(grid%z_face(grid%ubnd_fce), real_fmt='(F12.3)')
                   call self%output_files(i)%next_row()
                end if
+            end if
+         end do
+      end if
+
+      ! Dedicated per-zone files: one per benthic state/diagnostic variable,
+      ! n_zones columns headed by zone height (cumulative height above the
+      ! lake bottom), alongside (not instead of) the aggregate files above.
+      if (self%n_zones > 0) then
+         do i = self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet + 1, self%n_vars
+            j = i - (self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet)
+            if (j <= self%n_vars_AED_zone_state) then
+               file_path = output_config%PathOut//'/'//trim(self%zone_state_names(j))//'_zone_out.dat'
+            else
+               file_path = output_config%PathOut//'/'// &
+                           trim(self%output_config%output_vars_aed2_diagnostic_sheet%names(j - self%n_vars_AED_zone_state))//'_zone_out.dat'
+            end if
+            inquire (file=file_path, exist=append)
+            append = append .and. snapshot_file_exists
+
+            call self%output_files(i)%open(file_path, n_cols=self%n_zones + 1, append=append, status_ok=status_ok)
+            if (.not. append) then
+               call self%output_files(i)%add('Datetime')
+               call self%output_files(i)%add(self%zone_heights, real_fmt='(F12.3)')
+               call self%output_files(i)%next_row()
             end if
          end do
       end if
@@ -455,9 +518,9 @@ contains
          call output_helper%next_row(self%output_files(i))
       end do
 
-      ! AED2 part
-      if (self%model_config%couple_aed2) then
-         do i = self%n_vars_Simstrat + 1, self%n_vars
+      ! AED2 part (aggregate state/diagnostic/diagnostic-sheet)
+      if ((self%model_config%couple_aed2 .or. self%model_config%couple_aed)) then
+         do i = self%n_vars_Simstrat + 1, self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet
             ! Write datum
             call output_helper%add_datum(self%output_files(i), "(F12.4)")
             ! Interpolate state on volume grid
@@ -472,6 +535,23 @@ contains
             end if
 
             ! Advance to next row
+            call output_helper%next_row(self%output_files(i))
+         end do
+      end if
+
+      ! Dedicated per-zone output: the raw per-zone values are already
+      ! exactly n_zones long, so no depth interpolation is needed here --
+      ! they are written to their n_zones columns directly.
+      if (self%n_zones > 0) then
+         do i = self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet + 1, self%n_vars
+            j = i - (self%n_vars_Simstrat + self%n_vars_AED2_state + self%n_vars_AED2_diagnostic + self%n_vars_AED2_diagnostic_sheet)
+            call output_helper%add_datum(self%output_files(i), "(F12.4)")
+            if (j <= self%n_vars_AED_zone_state) then
+               call output_helper%add_data_array(self%output_files(i), i, self%last_iteration_data, self%zone_state_values(:, j), "(ES14.4E3)")
+            else
+               call output_helper%add_data_array(self%output_files(i), i, self%last_iteration_data, &
+                                                  self%zone_diagnostic_sheet_values(:, j - self%n_vars_AED_zone_state), "(ES14.4E3)")
+            end if
             call output_helper%next_row(self%output_files(i))
          end do
       end if
@@ -563,14 +643,21 @@ contains
          if (self%w1 == 0) then
             call output_file%add(data, real_fmt=format)
          else
+            ! last_iteration_data's column width is sized for the widest
+            ! variable (depth-profile vs. zone-output vars can differ), so
+            ! interpolated_data must be (re)sized to match this call's data,
+            ! not just allocated once and reused across differently-sized calls.
+            if (allocated(self%interpolated_data)) then
+               if (size(self%interpolated_data) /= size(data)) deallocate (self%interpolated_data)
+            end if
             if (.not. allocated(self%interpolated_data)) then
                allocate (self%interpolated_data(size(data)))
             end if
-            self%interpolated_data = self%w1 * last_iteration_data(index, :) + self%w0 * data
+            self%interpolated_data = self%w1 * last_iteration_data(index, 1:size(data)) + self%w0 * data
             call output_file%add(self%interpolated_data, real_fmt=format)
          end if
       end if
-      last_iteration_data(index, :) = data
+      last_iteration_data(index, 1:size(data)) = data
    end subroutine
 
    subroutine output_helper_add_data_scalar(self, output_file, index, last_iteration_data, data, format)

@@ -47,6 +47,8 @@ module simstrat_aed
    use utilities
    use aed_api
    use aed_core, only: aed_variable_t, aed_get_var, V_STATE, V_DIAGNOSTIC, V_EXTERNAL
+   use aed_zones, only: aed_init_zones, aedZones, aed_n_zones, api_set_zone_funcs, &
+                         api_zone_t, calc_zone_areas_t, copy_to_zone_t, copy_from_zone_t
    use, intrinsic :: iso_c_binding, only: C_INT32_T, C_DOUBLE
    use, intrinsic :: ieee_arithmetic
 
@@ -54,7 +56,7 @@ module simstrat_aed
    private
 
    type, public :: SimstratAED
-      class(AED2Config), pointer :: aed_cfg
+      class(AEDConfig), pointer :: aed_cfg
       class(StaggeredGrid), pointer :: grid
 
       ! Variable counts (n_aed_vars is the total before the API registers
@@ -84,11 +86,26 @@ module simstrat_aed
       real(RK), pointer, dimension(:) :: heights_c, bioext_c, biodrag_c
       real(RK), pointer, dimension(:) :: sedzones_c, zeros_c
 
-      ! Variable names (pointed to from ModelState for output)
+      ! Variable names (pointed to from ModelState for output). names holds
+      ! pelagic AND benthic names concatenated (size n_vars+n_vars_ben),
+      ! matching AED2_state's columns 1:1; bennames aliases its tail.
       character(len=48), pointer :: names(:)
       character(len=48), pointer :: bennames(:)
       character(len=48), pointer :: diagnames(:)
       character(len=48), pointer :: diagnames_sheet(:)
+
+      ! Sediment zones (GLM-style depth bands, only used if benthic_mode > 1).
+      ! zone_cc/zone_cc_hz/zone_diag/zone_diag_hz back aed_init_zones; their
+      ! per-zone slices are aliased inside libaed-api's aedZones(:) array.
+      integer :: n_zones = 0
+      real(RK), pointer, dimension(:) :: zone_heights_m ! cumulative height above bottom per zone
+      real(RK), pointer, dimension(:,:,:) :: zone_cc, zone_diag
+      real(RK), pointer, dimension(:,:) :: zone_cc_hz, zone_diag_hz
+      ! Per-zone benthic state/diagnostics for output, (n_zones, n_vars_ben) /
+      ! (n_zones, n_vars_diag_sheet) -- transposed re-layout of zone_cc_hz/
+      ! zone_diag_hz (which are variable-major), refreshed each step and
+      ! exposed via ModelState for dedicated <name>_zone_out.dat files.
+      real(RK), pointer, dimension(:,:) :: zone_state_out, zone_diag_sheet_out
 
    contains
       procedure, pass(self), public :: init
@@ -109,7 +126,7 @@ contains
       class(ModelState) :: state
       class(StaggeredGrid), target :: grid
       class(ModelConfig), target :: model_cfg
-      class(AED2Config), target :: aed_cfg
+      class(AEDConfig), target :: aed_cfg
       class(ModelParam), target :: model_param
 
       ! Local variables
@@ -131,7 +148,7 @@ contains
          ! ------------------------------------------------------------------
          ! (1) Parse the AED models configuration (&aed_models namelist)
          ! ------------------------------------------------------------------
-         self%n_aed_vars = aed_configure_models(aed_cfg%aed2_config_file, &
+         self%n_aed_vars = aed_configure_models(aed_cfg%aed_config_file, &
                                                 n_vars, n_vars_ben, n_vars_diag, n_vars_diag_sheet)
 
          print "(/,5X,'AED : n_aed_vars  = ',I4,' ; MaxLayers         = ',I4)", self%n_aed_vars, grid%nz_grid
@@ -155,8 +172,10 @@ contains
          ! ------------------------------------------------------------------
          benthic_mode = aed_cfg%benthic_mode
          if (benthic_mode > 1) then
-            call warn('Sediment zones (benthic_mode > 1) are not yet supported by the Simstrat AED-API coupler. Using benthic_mode = 1.')
-            benthic_mode = 1
+            if (aed_cfg%n_zones < 1 .or. .not. allocated(aed_cfg%zone_heights)) then
+               call warn('Sediment zones (benthic_mode > 1) require AEDConfig.NZones and AEDConfig.ZoneHeights. Using benthic_mode = 1.')
+               benthic_mode = 1
+            end if
          end if
 
          cpl%mobility_off = .not. aed_cfg%particle_mobility
@@ -248,6 +267,12 @@ contains
          call aed_set_model_env(env, 1, grid%nz_grid)
 
          ! ------------------------------------------------------------------
+         ! (4b) Sediment zones (must be registered before aed_set_model_data,
+         !      which sizes its zone-dependent arrays off aed_n_zones)
+         ! ------------------------------------------------------------------
+         if (benthic_mode > 1) call init_zones(self, aed_cfg)
+
+         ! ------------------------------------------------------------------
          ! (5) Data arrays (the API initialises them to module default values)
          ! ------------------------------------------------------------------
          dat(1)%cc => self%cc
@@ -278,6 +303,14 @@ contains
          state%AED2_state_names => self%names
          state%AED2_diagnostic_names => self%diagnames
          state%AED2_diagnostic_names_sheet => self%diagnames_sheet
+
+         if (self%n_zones > 0) then
+            state%n_AED_zones = self%n_zones
+            state%AED_zone_heights => self%zone_heights_m
+            state%AED_zone_state => self%zone_state_out
+            state%AED_zone_diagnostic_sheet => self%zone_diag_sheet_out
+            state%AED_zone_state_names => self%bennames
+         end if
 
          ! ------------------------------------------------------------------
          ! (7) Initial conditions: default values from the namelist were set by
@@ -355,12 +388,20 @@ contains
          !     inflow and diffusion since the last call) into the API arrays
          call mirror_to_api(self)
 
+         ! (2b) Refresh zone environment (temperature, salinity, light, ...) at
+         !      each zone's representative layer. Zone geometry and pelagic
+         !      state exchange are handled by the registered zone callbacks;
+         !      these physical fields aren't carried by that callback
+         !      interface, so they're set directly here instead.
+         if (self%n_zones > 0) call update_zone_environment(self, state)
+
          ! (3) Run one AED timestep (no surface exchange under ice cover)
          do_surface = .not. (state%total_ice_h > 0)
          call aed_run_model(1, grid%nz_occupied, do_surface)
 
          ! (4) Pull results back into the Simstrat-layout mirrors
          call api_to_mirror(self)
+         if (self%n_zones > 0) call update_zone_output(self)
 
          ! (5) Light absorption feedback to the Simstrat temperature model
          if (self%aed_cfg%bioshade_feedback) then
@@ -476,17 +517,241 @@ contains
          self%bioext_c = 0.0_RK; self%biodrag_c = 0.0_RK; self%sedzones_c = 0.0_RK
          self%zeros_c = 0.0_RK
 
-         ! Names
-         allocate (self%names(n_vars), stat=status)
+         ! Names: names holds pelagic+benthic combined (matches AED2_state's
+         ! n_vars+n_vars_ben columns); bennames aliases its benthic tail.
+         allocate (self%names(n_vars + n_vars_ben), stat=status)
          if (status /= 0) stop 'allocate_memory(): Error allocating (names)'
-         allocate (self%bennames(n_vars_ben), stat=status)
-         if (status /= 0) stop 'allocate_memory(): Error allocating (bennames)'
+         self%bennames => self%names(n_vars + 1:n_vars + n_vars_ben)
          allocate (self%diagnames(n_vars_diag), stat=status)
          if (status /= 0) stop 'allocate_memory(): Error allocating (diagnames)'
          allocate (self%diagnames_sheet(n_vars_diag_sheet), stat=status)
          if (status /= 0) stop 'allocate_memory(): Error allocating (diagnames_sheet)'
       end associate
    end subroutine allocate_memory
+
+
+   ! ---------------------------------------------------------------------------
+   ! Sediment zones (GLM-style depth bands, benthic_mode > 1). Registers the
+   ! zone count/heights and geometry/state-exchange callbacks with
+   ! libaed-api; zone-level benthic state (aedZones(:)%z_cc_hz) then evolves
+   ! correctly inside aed_run_model. Zone environment (temperature, salinity,
+   ! light, ...) is refreshed directly each step in `update`, since the
+   ! API's zone callback interfaces don't carry those fields.
+   ! ---------------------------------------------------------------------------
+
+   subroutine init_zones(self, aed_cfg)
+      implicit none
+
+      class(SimstratAED) :: self
+      class(AEDConfig) :: aed_cfg
+
+      procedure(calc_zone_areas_t), pointer :: p_areas
+      procedure(copy_to_zone_t), pointer :: p_to
+      procedure(copy_from_zone_t), pointer :: p_from
+      integer :: status, zon
+
+      self%n_zones = aed_cfg%n_zones
+      allocate (self%zone_heights_m(self%n_zones))
+      self%zone_heights_m = aed_cfg%zone_heights
+
+      allocate (self%zone_cc(self%n_vars, 1, self%n_zones), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_cc)'
+      allocate (self%zone_cc_hz(self%n_vars_ben, self%n_zones + 1), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_cc_hz)'
+      allocate (self%zone_diag(self%n_vars_diag, 1, self%n_zones), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_diag)'
+      allocate (self%zone_diag_hz(self%n_vars_diag_sheet, self%n_zones + 1), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_diag_hz)'
+      self%zone_cc = 0.0_RK
+      self%zone_cc_hz = 0.0_RK
+      self%zone_diag = 0.0_RK
+      self%zone_diag_hz = 0.0_RK
+
+      allocate (self%zone_state_out(self%n_zones, self%n_vars_ben), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_state_out)'
+      allocate (self%zone_diag_sheet_out(self%n_zones, self%n_vars_diag_sheet), stat=status)
+      if (status /= 0) stop 'init_zones(): Error allocating (zone_diag_sheet_out)'
+      self%zone_state_out = 0.0_RK
+      self%zone_diag_sheet_out = 0.0_RK
+
+      call aed_init_zones(self%n_zones, 1, self%zone_cc, self%zone_cc_hz, self%zone_diag, self%zone_diag_hz)
+
+      do zon = 1, self%n_zones
+         aedZones(zon)%z_env%z_height = self%zone_heights_m(zon)
+         aedZones(zon)%longitude => self%lon_c
+         aedZones(zon)%latitude => self%lat_c
+         ! zones are always fully wet here (no riparian/dry handling; that is benthic_mode 3)
+         aedZones(zon)%z_env%z_pc_wet = 1.0_RK
+      end do
+
+      p_areas => simstrat_calc_zone_areas
+      p_to => simstrat_copy_to_zone
+      p_from => simstrat_copy_from_zone
+      call api_set_zone_funcs(p_to, p_from, p_areas)
+   end subroutine init_zones
+
+
+   ! Copies each zone's own (kinetics-evolved) benthic state/diagnostics
+   ! into the (n_zones, n_vars) output-facing arrays exposed via ModelState,
+   ! for the dedicated <name>_zone_out.dat files. This is a transpose of
+   ! zone_cc_hz/zone_diag_hz (variable-major) into zone-major layout, and is
+   ! purely for output -- it does not feed back into the simulation.
+   subroutine update_zone_output(self)
+      implicit none
+      class(SimstratAED) :: self
+      integer :: zon
+
+      do zon = 1, self%n_zones
+         if (self%n_vars_ben > 0) self%zone_state_out(zon, :) = aedZones(zon)%z_cc_hz(:)
+         if (self%n_vars_diag_sheet > 0) self%zone_diag_sheet_out(zon, :) = aedZones(zon)%z_cc_diag_hz(:)
+      end do
+   end subroutine update_zone_output
+
+
+   ! Refreshes each zone's physical environment (temperature, salinity,
+   ! light, meteorology, ...) from Simstrat's own state at that zone's
+   ! representative layer, each timestep, ahead of the AED run.
+   subroutine update_zone_environment(self, state)
+      implicit none
+      class(SimstratAED) :: self
+      class(ModelState) :: state
+
+      integer :: zon, lev
+
+      do zon = 1, self%n_zones
+         lev = zone_layer(self%zone_heights_m(zon), self%heights_c, self%grid%nz_occupied)
+         aedZones(zon)%z_env%z_temp = state%T(lev)
+         aedZones(zon)%z_env%z_salt = state%S(lev)
+         aedZones(zon)%z_env%z_rho = state%rho(lev)
+         aedZones(zon)%z_env%z_pres = self%pres_c(lev)
+         aedZones(zon)%z_env%z_extc = state%absorb_vol(lev)
+         aedZones(zon)%z_env%z_par = self%par_c(lev)
+         aedZones(zon)%z_env%z_nir = self%nir_c(lev)
+         aedZones(zon)%z_env%z_uva = self%uva_c(lev)
+         aedZones(zon)%z_env%z_uvb = self%uvb_c(lev)
+         aedZones(zon)%z_env%z_tss = self%tss_c(lev)
+         aedZones(zon)%z_env%z_wind = state%uv10
+         aedZones(zon)%z_env%z_air_temp = self%air_temp_c
+         aedZones(zon)%z_env%z_air_pres = self%air_pres_c
+         aedZones(zon)%z_env%z_rain = state%rain
+         aedZones(zon)%z_env%z_I_0 = state%rad0
+         aedZones(zon)%z_env%z_longwave = self%longwave_c
+         aedZones(zon)%z_env%z_layer_stress = state%u_taub
+         aedZones(zon)%z_env%z_sed_zone = real(zon, RK)
+         aedZones(zon)%z_env%z_sed_zones = real(zon, RK)
+      end do
+   end subroutine update_zone_environment
+
+
+   ! Representative layer for a zone: the shallowest layer whose cumulative
+   ! height (from the bottom) first exceeds the zone's own upper boundary
+   ! height, matching libaed-api's own internal zlev search in aed_api.F90.
+   pure function zone_layer(zone_height, heights, wlev) result(lev)
+      real(RK), intent(in) :: zone_height
+      real(RK), dimension(:), intent(in) :: heights
+      integer, intent(in) :: wlev
+      integer :: lev, i
+
+      lev = 0
+      do i = 1, wlev
+         if (zone_height < heights(i)) then
+            lev = i
+            exit
+         end if
+      end do
+      if (lev == 0) lev = wlev
+   end function zone_layer
+
+
+   ! Zone footprint area/thickness from the host's per-layer geometry, at
+   ! each zone's representative layer.
+   subroutine simstrat_calc_zone_areas(theZones, n_zones, areas, heights, wlev)
+      implicit none
+      type(api_zone_t), dimension(:), intent(inout) :: theZones
+      integer, intent(in) :: n_zones
+      real(RK), dimension(:), pointer, intent(in) :: areas
+      real(RK), dimension(:), pointer, intent(in) :: heights
+      integer, intent(in) :: wlev
+
+      integer :: zon, lev
+
+      do zon = 1, n_zones
+         lev = zone_layer(theZones(zon)%z_env%z_height, heights, wlev)
+         theZones(zon)%z_env%z_area = areas(lev)
+         if (lev > 1) then
+            theZones(zon)%z_env%z_dz = heights(lev) - heights(lev - 1)
+         else
+            theZones(zon)%z_env%z_dz = heights(lev)
+         end if
+         theZones(zon)%z_env%z_col_area = areas(wlev)
+         theZones(zon)%z_env%z_col_depth = heights(wlev)
+         theZones(zon)%z_env%z_depth = heights(wlev) - heights(lev)
+      end do
+   end subroutine simstrat_calc_zone_areas
+
+
+   ! Overlying water column pelagic state/diagnostics at each zone's
+   ! representative layer, so zone benthic kinetics can read e.g. the
+   ! dissolved oxygen concentration in the water immediately above it.
+   subroutine simstrat_copy_to_zone(theZones, n_zones, heights, x_cc, x_cc_hz, x_diag, x_diag_hz, wlev)
+      implicit none
+      type(api_zone_t), dimension(:), intent(inout) :: theZones
+      integer, intent(in) :: n_zones
+      real(RK), dimension(:), pointer, intent(in) :: heights
+      real(RK), dimension(:,:), pointer, intent(in) :: x_cc
+      real(RK), dimension(:), pointer, intent(in) :: x_cc_hz
+      real(RK), dimension(:,:), pointer, intent(in) :: x_diag
+      real(RK), dimension(:), pointer, intent(in) :: x_diag_hz
+      integer, intent(in) :: wlev
+
+      integer :: zon, lev
+
+      do zon = 1, n_zones
+         lev = zone_layer(theZones(zon)%z_env%z_height, heights, wlev)
+         if (size(x_cc, 1) > 0) theZones(zon)%z_cc(:, zon) = x_cc(:, lev)
+         if (size(x_diag, 1) > 0) theZones(zon)%z_cc_diag(:, zon) = x_diag(:, lev)
+      end do
+   end subroutine simstrat_copy_to_zone
+
+
+   ! Reports each zone's (now kinetics-evolved) benthic state back onto
+   ! Simstrat's single-scalar-per-variable cc_hz/diag_hz slots, as an
+   ! area-weighted average across zones. Simstrat's own state arrays are not
+   ! zone-resolved, so this is a summary for output/mass-balance purposes;
+   ! each zone's own mass (theZones(:)%z_cc_hz) is unaffected by this and
+   ! keeps evolving correctly regardless. Pelagic arrays (x_cc/x_diag) are
+   ! deliberately left untouched here: the water-column feedback from
+   ! benthic fluxes is already applied via the flux-based disaggregation
+   ! built into libaed-api's GLM-style zone handling -- touching x_cc here
+   ! too would double-count it.
+   subroutine simstrat_copy_from_zone(theZones, n_zones, heights, x_cc, x_cc_hz, x_diag, x_diag_hz, wlev)
+      implicit none
+      type(api_zone_t), dimension(:), intent(in) :: theZones
+      integer, intent(in) :: n_zones
+      real(RK), dimension(:), pointer, intent(in) :: heights
+      real(RK), dimension(:,:), pointer, intent(inout) :: x_cc
+      real(RK), dimension(:), pointer, intent(inout) :: x_cc_hz
+      real(RK), dimension(:,:), pointer, intent(inout) :: x_diag
+      real(RK), dimension(:), pointer, intent(inout) :: x_diag_hz
+      integer, intent(in) :: wlev
+
+      integer :: zon
+      real(RK) :: total_area, w
+
+      total_area = 0.0_RK
+      do zon = 1, n_zones
+         total_area = total_area + theZones(zon)%z_env%z_area
+      end do
+      if (total_area <= 0.0_RK) return
+
+      if (size(x_cc_hz) > 0) x_cc_hz = 0.0_RK
+      if (size(x_diag_hz) > 0) x_diag_hz = 0.0_RK
+      do zon = 1, n_zones
+         w = theZones(zon)%z_env%z_area/total_area
+         if (size(x_cc_hz) > 0) x_cc_hz = x_cc_hz + w*theZones(zon)%z_cc_hz
+         if (size(x_diag_hz) > 0) x_diag_hz = x_diag_hz + w*theZones(zon)%z_cc_diag_hz
+      end do
+   end subroutine simstrat_copy_from_zone
 
 
    ! ---------------------------------------------------------------------------
@@ -567,7 +832,7 @@ contains
       character(len=100) :: fname
       integer :: i, nval
 
-      fname = trim(self%aed_cfg%path_aed2_initial)//trim(varname)//'_ini.dat'
+      fname = trim(self%aed_cfg%path_aed_initial)//trim(varname)//'_ini.dat'
       open (14, action='read', status='unknown', err=1, file=fname) ! Opens initial conditions file
       write (6, *) 'reading initial conditions of ', trim(varname)
       read (14, *) ! Skip header

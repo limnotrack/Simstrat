@@ -104,6 +104,7 @@ module strat_simdata
    type, public :: ModelConfig
       integer :: max_length_input_data
       logical :: couple_aed2
+      logical :: couple_aed ! Couple with the new libaed-api based AED coupling (mutually exclusive with couple_aed2)
       integer :: turbulence_model
       logical :: split_a_seiche
       integer :: stability_func
@@ -130,6 +131,28 @@ module strat_simdata
       real(RK) :: background_extinction
       integer :: benthic_mode
       !integer :: n_zones
+      real(RK), dimension(:), allocatable :: zone_heights
+   end type
+
+   ! AED (libaed-api) configuration (read from file). Independent of, and
+   ! mutually exclusive with, AED2Config/couple_aed2 above: this is the newer
+   ! libaed-api based coupling (see simstrat_aed.f90), kept as a separate
+   ! opt-in feature rather than a replacement for the AED2 coupling so that
+   ! existing AED2 configurations keep working unchanged.
+   type, public :: AEDConfig
+      character(len=:), allocatable :: aed_config_file
+      character(len=:), allocatable :: path_aed_initial
+      character(len=:), allocatable :: path_aed_inflow
+      logical :: particle_mobility
+      logical :: bioshade_feedback
+      logical :: output_diagnostic_variables
+      real(RK) :: background_extinction
+      integer :: benthic_mode
+      ! Sediment zones (only used when benthic_mode > 1): n_zones static depth
+      ! bands, each with its own sediment biogeochemistry, GLM-style. Heights
+      ! are cumulative height above the lake bottom (0 = bottom), ascending,
+      ! marking each zone's upper boundary.
+      integer :: n_zones = 0
       real(RK), dimension(:), allocatable :: zone_heights
    end type
 
@@ -186,6 +209,16 @@ module strat_simdata
       character(len=48), dimension(:), pointer :: AED2_diagnostic_names ! Names of AED2 diagnostic variables used in the simulation
       character(len=48), dimension(:), pointer :: AED2_diagnostic_names_sheet ! Names of AED2 diagnostic surface variables used in the simulation
       integer :: n_pH
+
+      ! Sediment zones (GLM-style, only used by the newer libaed-api coupling
+      ! when AEDConfig.BenthicMode > 1). Per-zone benthic state/diagnostics,
+      ! for dedicated <name>_zone_out.dat output files alongside (not instead
+      ! of) the existing aggregate <name>_out.dat files.
+      integer :: n_AED_zones = 0
+      real(RK), dimension(:), pointer :: AED_zone_heights ! cumulative height above bottom per zone, for output headers
+      real(RK), dimension(:,:), pointer :: AED_zone_state ! (n_zones, n_vars_ben)
+      real(RK), dimension(:,:), pointer :: AED_zone_diagnostic_sheet ! (n_zones, n_vars_diag_sheet)
+      character(len=48), dimension(:), pointer :: AED_zone_state_names ! benthic state variable names (n_vars_ben)
    
       ! Variables located on z_upp grid
       real(RK), dimension(:), allocatable :: k, ko ! Turbulent kinetic energy (TKE) [J/kg]
@@ -252,6 +285,7 @@ module strat_simdata
       type(SimConfig), public     :: sim_cfg
       type(ModelConfig), public   :: model_cfg
       type(AED2Config), public    :: aed2_cfg
+      type(AEDConfig), public     :: aed_cfg
       type(ModelParam), public    :: model_param
       type(ModelState), public    :: model
       type(StaggeredGrid), public :: grid
@@ -354,6 +388,7 @@ contains
       self%hv = 0.0_RK 
       self%rad0 = 0.0_RK
       self%n_pH = 0
+      self%n_AED_zones = 0
 
       ! init pointers
       allocate(self%uv10)
