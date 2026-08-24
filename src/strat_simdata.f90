@@ -136,6 +136,7 @@ module strat_simdata
    ! Model params (read from file)
    type, public :: ModelParam
       real(RK) :: Lat
+      real(RK) :: Lon
       real(RK) :: p_air
       real(RK) :: a_seiche
       real(RK) :: a_seiche_w
