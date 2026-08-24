@@ -1,5 +1,11 @@
 name: Build Simstrat
 
+# This workflow builds Simstrat with libaed2 and the opt-in libaed-api AED
+# coupling (libaed-water/-benthic/-demo/-api, all public/submoduled) -- no
+# private AquaticEcoDynamics repos required, so it runs for any fork or PR.
+# See build-aed-full.yml for the companion workflow that additionally links
+# libaed-riparian/-lighting/-dev (private repos, needs a maintainer secret).
+
 on:
   push:
     branches: [ main, master, develop ]
