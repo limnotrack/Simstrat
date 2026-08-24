@@ -1,31 +1,12 @@
 name: Build Simstrat (full AED-API path)
 
-# Companion to build.yml: additionally builds and links libaed-riparian,
-# libaed-lighting and libaed-dev (aed_alum, aed_campbell, aed_soilbgc,
-# aed_phreeqcrm, ...) on top of the libaed-water/-benthic/-demo/-api stack.
-# Those three repos are private AquaticEcoDynamics repos (not submodules --
-# see build/README.md), so this job needs a maintainer-provided token with
-# read access to them: add it as a repository secret named
-# AED_PRIVATE_PAT (Settings > Secrets and variables > Actions).
-# Without that secret configured, this workflow's job is skipped rather than
-# failing, so forks/clones without access to the private repos are unaffected.
-#
-# aed_plots.F90 (GLM's interactive live-plotting feature, needs libgd) is
-# excluded from the libaed-dev build here, same as in local development --
-# see build/README.md "Optional: full libaed-dev path". Everything else in
-# libaed-dev is built unmodified.
-#
-# phreeqcrm (needed by aed_phreeqcrm.F90) is public (usgs-coupled/phreeqcrm)
-# and is cloned without authentication.
-
 on:
-  push:
-    branches: [ main, master, develop ]
+  # push:
+  #   branches: [ main, master, develop ]
   workflow_dispatch:
 
 jobs:
   build:
-    if: ${{ secrets.AED_PRIVATE_PAT != '' }}
     runs-on: ubuntu-latest
 
     steps:
