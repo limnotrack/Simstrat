@@ -1,0 +1,137 @@
+name: Build Simstrat (full AED-API path)
+
+# Companion to build.yml: additionally builds and links libaed-riparian,
+# libaed-lighting and libaed-dev (aed_alum, aed_campbell, aed_soilbgc,
+# aed_phreeqcrm, ...) on top of the libaed-water/-benthic/-demo/-api stack.
+# Those three repos are private AquaticEcoDynamics repos (not submodules --
+# see build/README.md), so this job needs a maintainer-provided token with
+# read access to them: add it as a repository secret named
+# AED_PRIVATE_REPOS_TOKEN (Settings > Secrets and variables > Actions).
+# Without that secret configured, this workflow's job is skipped rather than
+# failing, so forks/clones without access to the private repos are unaffected.
+#
+# aed_plots.F90 (GLM's interactive live-plotting feature, needs libgd) is
+# excluded from the libaed-dev build here, same as in local development --
+# see build/README.md "Optional: full libaed-dev path". Everything else in
+# libaed-dev is built unmodified.
+#
+# phreeqcrm (needed by aed_phreeqcrm.F90) is public (usgs-coupled/phreeqcrm)
+# and is cloned without authentication.
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: ${{ secrets.AED_PRIVATE_REPOS_TOKEN != '' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install FoBiS.py
+        run: pip install FoBiS.py
+
+      - name: Install gfortran and cmake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran make cmake g++
+
+      - name: Set F90 environment variable
+        run: echo "F90=gfortran" >> $GITHUB_ENV
+
+      - name: Clone private AquaticEcoDynamics repos
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.AED_PRIVATE_REPOS_TOKEN }}
+        run: |
+          git clone --depth 1 "https://${TOKEN}@github.com/AquaticEcoDynamics/libaed-riparian" lib/libaed-riparian
+          git clone --depth 1 "https://${TOKEN}@github.com/AquaticEcoDynamics/libaed-light" lib/libaed-lighting
+          git clone --depth 1 "https://${TOKEN}@github.com/AquaticEcoDynamics/libaed-dev" lib/libaed-dev
+
+      - name: Clone phreeqcrm (public)
+        run: git clone --depth 1 https://github.com/usgs-coupled/phreeqcrm lib/phreeqcrm
+
+      - name: Build libaed2 library
+        working-directory: lib/libaed2
+        run: make
+
+      - name: Build libaed-water library
+        working-directory: lib/libaed-water
+        run: make
+
+      - name: Build libaed-benthic library
+        working-directory: lib/libaed-benthic
+        run: make
+
+      - name: Build libaed-demo library
+        working-directory: lib/libaed-demo
+        run: make
+
+      - name: Build libaed-riparian library
+        working-directory: lib/libaed-riparian
+        run: make
+
+      - name: Build libaed-lighting library
+        working-directory: lib/libaed-lighting
+        run: make
+
+      - name: Build phreeqcrm
+        working-directory: lib/phreeqcrm
+        run: |
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_Fortran_COMPILER=gfortran -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --config Release -j 2
+
+      - name: Exclude aed_plots.F90 from libaed-dev (needs libgd, not installed here)
+        shell: bash
+        working-directory: lib/libaed-dev
+        run: |
+          sed -i '/OBJS=\${objdir}\/aed_campbell\.o/i DEFINES+=-D_NO_PLOTS_' Makefile
+          sed -i '/aed_plots\.o \\$/d' Makefile
+          grep -q 'DEFINES+=-D_NO_PLOTS_' Makefile
+          ! grep -q 'aed_plots\.o \\$' Makefile
+
+      - name: Build libaed-dev library
+        working-directory: lib/libaed-dev
+        run: make PHREEQDIR=../phreeqcrm
+
+      - name: Build libaed-api library (full path)
+        working-directory: lib/libaed-api
+        run: |
+          make AEDBENDIR=../libaed-benthic AEDDMODIR=../libaed-demo AEDRIPDIR=../libaed-riparian AEDLGTDIR=../libaed-lighting AEDDEVDIR=../libaed-dev
+          make AEDRIPDIR=../libaed-riparian AEDLGTDIR=../libaed-lighting AEDDEVDIR=../libaed-dev obj/aed_external.o
+
+      - name: Build Simstrat
+        working-directory: build
+        run: fobis build -mode release-gnu-aed-full
+
+      - name: List build output
+        working-directory: build
+        run: |
+          ls -lh simstrat* || echo "No simstrat executable found"
+          file simstrat* || echo "Cannot determine file type"
+
+      - name: Package executable
+        working-directory: build
+        run: |
+          chmod +x simstrat
+          zip simstrat-linux-aed-full.zip simstrat
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: simstrat-linux-aed-full
+          path: build/simstrat-linux-aed-full.zip
+          retention-days: 90
