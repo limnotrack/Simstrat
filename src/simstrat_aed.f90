@@ -382,8 +382,11 @@ contains
             self%heights_c(i) = self%heights_c(i-1) + grid%h(i)
          end do
 
-         ! In-water light field from Simstrat's radiation profile [W/m2]
-         self%par_c(:) = state%rad_vol(:)*rho_0*cp
+         ! In-water light field from Simstrat's radiation profile [W/m2].
+         ! state%rad_vol is already converted back to physical units in
+         ! strat_temp.f90 (rad_vol = rad*rho_0*cp); re-applying rho_0*cp here
+         ! inflated PAR by ~4e6x and broke AED's light-response functions.
+         self%par_c(:) = state%rad_vol(:)
          self%rad_c(:) = self%par_c(:)
 
          ! (2) Push the Simstrat-side state (possibly modified by advection,
